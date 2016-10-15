@@ -1,3 +1,5 @@
+#!/usr/bin/env python
+
 from __future__ import print_function 
 
 """
@@ -51,8 +53,10 @@ def clip_frame( frame, box ):
     return frame[c1:c2,r1:r2]
 
 def generate_box( (c,r), width, height ):
-    if width < 0: width = 10
-    if height < 0 : height = 10
+    if width < 0: 
+        width = 10
+    if height < 0 : 
+        height = 10
     leftCorner = ( max(0,c - width / 2), max(0, r - height / 2 ) )
     rightCorner = (leftCorner[0] + width, leftCorner[1] + height)
     return leftCorner, rightCorner 
@@ -185,25 +189,34 @@ def update_mouse_location( points ):
     global static_features_
     newPoints = [ ]
     if points is None:
-        return None
+        return None, None
     sumC = 0.0
     sumR = 0.0
 
     for p in points:
         (x,y) = p.ravel( )
-        if distance( (x,y), curr_loc_ ) < 100:
-            # if this point is in one of static feature point, reject it
-            if static_features_[ (x,y) ] > 1:
-                print( 'x', end = '')
-                continue
-            newPoints.append( (x,y) )
-            sumR += y
-            sumC += x
+        x, y = int(x), int(y)
 
-    ellipese = cv2.fitEllipse( np.array( newPoints ) )
+        # We don't want points which are far away from current location.
+        if distance( (x,y), curr_loc_ ) > 50:
+            continue 
+
+        # if this point is in one of static feature point, reject it
+        if static_features_[ (x,y) ] > 1:
+            print( 'x', end = '')
+            continue
+        newPoints.append( (x,y) )
+        sumR += y
+        sumC += x
+
+    ellipse = None
+    try:
+        ellipse = cv2.fitEllipse( np.array( newPoints ) )
+    except Exception as e:
+        pass
     if len( newPoints ) > 0:
         curr_loc_ = ( int(sumC / len( newPoints )), int(sumR / len( newPoints)) )
-    return ellipese, newPoints
+    return ellipse, newPoints
 
 def insert_int_corners( points ):
     """Insert or update feature points into an image by increasing the pixal
@@ -217,14 +230,13 @@ def insert_int_corners( points ):
     for p in points:
         (x,y) = p.ravel()
         static_features_[ (x,y) ] += 1
-        static_features_img_[ y, x ] += 1
-
+        # static_features_img_[ y, x ] += 1
 
 
 def track_using_trajectories( cur, prev ):
     global curr_loc_ 
     global static_features_img_
-    p0 = cv2.goodFeaturesToTrack( cur, 200, 0.01, 5 )
+    p0 = cv2.goodFeaturesToTrack( cur, 200, 0.01, 2 )
     insert_int_corners( p0 )
 
     draw_point( cur, p0, 1 )
@@ -233,7 +245,8 @@ def track_using_trajectories( cur, prev ):
     if p1 is not None:
         for p in p1:
             cv2.circle( cur, p, 10, 20, 2 )
-    cv2.ellipse( cur, ellipse, 1 )
+    if ellipse is not None:
+        cv2.ellipse( cur, ellipse, 1 )
     cv2.circle( cur, curr_loc_, 10, 255, 3)
     display_frame( cur, 1 )
     # cv2.imshow( 'static features', static_features_img_ )
