@@ -194,9 +194,15 @@ def draw_point( frame, points, thickness = 2):
     return frame
 
 
-def update_mouse_location( points ):
+def update_mouse_location( points, frame ):
     global curr_loc_
     global static_features_
+    c0, r0 = curr_loc_ 
+
+    # All point should be close to mouse color.
+    mouseColor = np.mean( frame[c0-10:c0+10,r0-10:r0+10] )
+    print( 'mouse color %d' % mouseColor )
+
     res = {}
     newPoints = [ ]
     if points is None:
@@ -216,6 +222,8 @@ def update_mouse_location( points ):
         if static_features_[ (x,y) ] > 1:
             print( 'x', end = '')
             continue
+        if frame[x,y] > mouseColor + 20 or frame[x,y] < mouseColor - 20:
+            continue 
         newPoints.append( (x,y) )
         sumR += y
         sumC += x
@@ -254,12 +262,14 @@ def track( cur ):
     # Apply a good bilinear filter. This will smoothen the image but preserve
     # the edges.
     cur = cv2.bilateralFilter( cur, 3, 50, 50 )
-    p0 = cv2.goodFeaturesToTrack( cur, 200, 0.01, 5 )
+    # p0 = cv2.goodFeaturesToTrack( cur, 200, 0.01, 5 )
+    p0 = cv2.cornerHarris( cur, 11, 7, 1 )
+    print( p0 )
 
     insert_int_corners( p0 )
     draw_point( cur, p0, 1 )
 
-    res = update_mouse_location( p0 )
+    res = update_mouse_location( p0, cur )
     p1 = res[ 'contour' ]
     ellipse = res[ 'ellipse' ]
     if p1 is not None:
