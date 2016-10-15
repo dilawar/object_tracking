@@ -298,8 +298,17 @@ def process( args ):
     global curr_loc_ 
     global static_features_img_ 
     cap_ = cv2.VideoCapture( args.file )
-    nFames = cap_.get( cv2.cv.CV_CAP_PROP_FRAME_COUNT )
-    fps = float( cap_.get( cv2.cv.CV_CAP_PROP_FPS ) )
+
+    nFrame = 0
+    try:
+        nFames = cap_.get( cv2.cv.CV_CAP_PROP_FRAME_COUNT )
+    except Exception as e:
+        nFames = cap_.get( cv2.CAP_PROP_FRAME_COUNT )
+    fps = 0.0
+    try:
+        fps = float( cap_.get( cv2.cv.CV_CAP_PROP_FPS ) )
+    except Exception as e:
+        fps = float( cap_.get( cv2.CAP_PROP_FPS ) )
     print( '[INFO] FPS = %f' % fps )
     cur = fetch_a_good_frame( )
     static_features_img_ = np.zeros( cur.shape )
@@ -309,7 +318,12 @@ def process( args ):
         curr_loc_ =  initialize_location( cur )
     # cur = threshold_frame( cur )
     while True:
-        totalFramesDone = cap_.get( cv2.cv.CV_CAP_PROP_POS_FRAMES ) 
+        totalFramesDone = -1
+        try:
+            totalFramesDone = cap_.get( cv2.cv.CV_CAP_PROP_POS_FRAMES ) 
+        except Exception as e:
+            totalFramesDone = cap_.get( cv2.CAP_PROP_POS_FRAMES ) 
+
         if totalFramesDone + 1 >= nFames:
             print( '== All done' )
             break
