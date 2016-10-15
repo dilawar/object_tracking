@@ -22,10 +22,11 @@ from collections import defaultdict
 import numpy as np
 
 trajectory_ = [ ]
-curr_loc_ = (100, 100)
+curr_loc_ = None
 static_features_ = defaultdict( int )
 static_features_img_ = None
 distance_threshold_ = 200
+mouse_color_ = 10
 
 # global window with callback function
 window_ = "Mouse tracker"
@@ -135,14 +136,15 @@ def fetch_n_frames_averaged( n = 1 ):
     print( meanF.shape )
     return meanF
 
-def fetch_a_good_frame( drop = 0 ):
+def fetch_a_good_frame( color = False ):
     global cap_
-    for i in range( drop ):
-        ret, frame = cap_.read()
     ret, frame = cap_.read()
     if ret:
         if is_a_good_frame( frame ):
-            return toGrey( frame )
+            if color:
+                return frame
+            else:
+                return toGrey( frame )
         else:
             return fetch_a_good_frame( )
     else:
@@ -175,49 +177,55 @@ def draw_point( frame, points, thickness = 2):
         cv2.circle( frame, (x,y), 2, 30, thickness )
     return frame
 
+def drop_frames( n = 1 ):
+    global cap_
+    for i in range( n ):
+        cap_.read()
 
-def update_mouse_location( points, frame ):
+def get_rect( frame, point, d = 100 ):
+    r0, c0 = point 
+    patch = frame[max(0,c0-d):c0+d,max(0,r0-d):r0+d ]
+    return patch
+
+def isOnTheMouse( point, frame ):
+    global mouse_color_
+    return True
+    # if color around the point is near to mouse color, we are good to go.
+    mousePatch = get_rect( frame, point, 20 )
+    print( mousePatch )
+    meanColor = np.mean( mousePatch )
+    print("Color", meanColor, mouse_color_ )
+    if meanColor > mouse_color_ + 20:
+        return False
+    if meanColor < mouse_color_ - 20:
+        return False
+    return True
+    
+
+def update_mouse_location( flow, frame ):
     global curr_loc_
     global static_features_img_
     global distance_threshold_
 
-    c0, r0 = curr_loc_ 
-    res = {}
-    newPoints = [ ]
-    if points is None:
-        return None, None
-    sumC = 0.0
-    sumR = 0.0
+    # get a patch of flow near current location.
+    r0, c0 = curr_loc_
+    print( "Curr location %s" % str(curr_loc_ ))
+    patch = get_rect( flow, curr_loc_, 100 )
+    patch = flow 
+    # Find the place where maximum change in flow intestity and draw a circle
+    # there. Thats probably is the mouse
+    minV, maxV, minL, maxL = cv2.minMaxLoc( patch )
+    while( not isOnTheMouse( maxL, frame ) ):
+        print( 'New point', maxL )
+        patch[maxL[1], maxL[0]] = maxV - 2
+        minV, maxV, minL, maxL = cv2.minMaxLoc( patch )
 
-    for p in points:
-        (x,y) = p.ravel( )
-        x, y = int(x), int(y)
+    curr_loc_ = maxL
+    cv2.circle( patch, maxL, 10, 255, 4 )
 
-        # We don't want points which are far away from current location.
-        if distance( (x,y), curr_loc_ ) > distance_threshold_:
-            print( 'd', end = '' )
-            continue 
+    cv2.imshow( 'patch', patch + frame )
+    cv2.waitKey( 1 )
 
-        # if this point is in one of static feature point, reject it
-        print( np.mean( static_features_img_ ) )
-        if static_features_img_[ y, x ] > 1:
-            continue
-        newPoints.append( (x,y) )
-        sumR += y
-        sumC += x
-
-    newPoints = np.array( newPoints )
-    ellipse = None
-    try:
-        ellipse = cv2.fitEllipse( newPoints )
-    except Exception as e:
-        pass
-    if len( newPoints ) > 0:
-        curr_loc_ = ( int(sumC / len( newPoints )), int(sumR / len( newPoints)) )
-    
-    res[ 'ellipse' ] = ellipse 
-    res[ 'contour' ] = newPoints
-    return res
 
 def insert_int_corners( points ):
     """Insert or update feature points into an image by increasing the pixal
@@ -233,48 +241,24 @@ def insert_int_corners( points ):
         static_features_img_[ y, x ] += 1
 
 
-def track( cur ):
+def track( cur, prev ):
     global curr_loc_ 
     global static_features_img_
+    global hsv_
     # Apply a good bilinear filter. This will smoothen the image but preserve
     # the edges.
     cur = cv2.bilateralFilter( cur, 5, 50, 50 )
-    p0 = cv2.goodFeaturesToTrack( cur, 200, 0.1, 5 )
-    insert_int_corners( p0 )
-    draw_point( cur, p0, 1 )
-
-    res = update_mouse_location( p0, cur )
-    p1 = res[ 'contour' ]
-    ellipse = res[ 'ellipse' ]
-    if p1 is not None:
-        for p in p1:
-            (x, y) = p.ravel()
-            cv2.circle( cur, (x,y), 10, 20, 2 )
-    if ellipse is not None:
-        # cv2.drawContours( cur, [p1], 0, 255, 2 )
-        cv2.ellipse( cur, ellipse, 1 )
-    cv2.circle( cur, curr_loc_, 10, 255, 3)
+    prev = cv2.bilateralFilter( prev, 5, 50, 50 )
+    flow = cv2.calcOpticalFlowFarneback( 
+            prev, cur, None, 0.5, 2, 10, 3, 5, 1.2, 0
+            )
+    mag, ang = cv2.cartToPolar( flow[...,0], flow[...,1] )
+    hsv_[...,0] = ang * 180 / np.pi / 2
+    hsv_[...,2] = cv2.normalize( mag, None, 0, 255, cv2.NORM_MINMAX ) 
+    hsvImg = toGrey( cv2.cvtColor( hsv_, cv2.COLOR_HSV2RGB ))
+    update_mouse_location( hsvImg, cur )
     display_frame( cur, 1 )
-    # cv2.imshow( 'static features', static_features_img_ )
     return 
-    # Find a contour
-    prevE = find_edges( prev )
-    curE = find_edges( cur )
-    img = curE - prevE
-    cnts, hier = cv2.findContours( img, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_NONE )
-    cnts = filter( ismouse, cnts )
-    cv2.drawContours( img, cnts, -1, 255, 3 )
-    display_frame( img, 1)
-    return 
-    p1, status, err = cv2.calcOpticalFlowPyrLK( prev, cur, p0 )
-    mat = cv2.estimateRigidTransform( p0, p1, False )
-    # print cv2.warpAffine( curr_loc_, mat, dsize=(2,1) )
-    if mat is not None:
-        dx, dy = mat[:,2]
-        da = math.atan2( mat[1,0], mat[0,0] )
-        trajectory_.append( (dx, dy, da) )
-        print( "Transformation", dx, dy, da )
-        curr_loc_ = (curr_loc_[0] - int(dy), curr_loc_[1] - int(dx))
 
 def get_cap_props( ):
     global cap_
@@ -296,13 +280,17 @@ def process( args ):
     global box_, templates_
     global curr_loc_ 
     global static_features_img_ 
+    global hsv_
     cap_ = cv2.VideoCapture( args.file )
     assert cap_
     nFames, fps = get_cap_props( )
 
     print( '[INFO] FPS = %f' % fps )
-    cur = fetch_a_good_frame( )
-
+    cur = fetch_a_good_frame( color = True )
+    hsv_ = np.zeros_like( cur )
+    hsv_[...,1] = 255
+    cur = toGrey( cur )
+    curr_loc_ = cur.shape[1]/2, cur.shape[0] / 2
     static_features_img_ = np.zeros( cur.shape )
     # cur = threshold_frame( cur )
     while True:
@@ -315,15 +303,11 @@ def process( args ):
         if totalFramesDone + 1 >= nFames:
             print( '== All done' )
             break
-        # prev = cur
+        prev = cur
+        # drop_frames( 4 )
         cur = fetch_a_good_frame( ) 
-        assert cur.any()
-        # cur = threshold_frame( cur )
-        track( cur )
+        track( cur, prev )
 
-        # After every 5 frame, Divide the static_features_img_.
-        if totalFramesDone % 5 == 0:
-            static_features_img_ = static_features_img_ / 5
 
 def main(args):
     # Extract video first
