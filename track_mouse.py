@@ -26,12 +26,14 @@ curr_loc_ = (100, 100)
 static_features_ = defaultdict( int )
 static_features_img_ = None
 distance_threshold_ = 200
+template_ = None
 
 # global window with callback function
 window_ = "Mouse tracker"
 
 def onmouse( event, x, y, flags, params ):
     global curr_loc_
+    global template_
     if event == cv2.EVENT_LBUTTONDOWN:
         curr_loc_ = (x, y)
         print( '[INFO] Current location updated to %s' % str( curr_loc_ ) )
@@ -64,7 +66,12 @@ def generate_box( (c,r), width, height ):
 
 def apply_template( frame, tmp ):
     tr, tc = tmp.shape    # Rows and cols in template.
-    res = cv2.matchTemplate( frame, tmp, cv2.TM_SQDIFF_NORMED )
+    res = None
+    try:
+        res = cv2.matchTemplate( frame, tmp, cv2.TM_SQDIFF_NORMED )
+    except Exception as e:
+        return 
+
     minmax = cv2.minMaxLoc( res )
     minv, maxv, minl, maxl = minmax
     return minl
@@ -84,37 +91,6 @@ def is_far_from_last_good_location( loc ):
     if dist < 5.0:
         return True
     return False
-
-
-def track_using_templates( frame ):
-    global lastGoodTemplate_
-    global lastGoodLocation_ 
-
-    # if last good location of mice is not known, then we apply the first
-    # template and get it.
-    if lastGoodTemplate_ is not None:
-        indx = lastGoodTemplate_[0]
-        ranges = np.mod( 
-                np.arange( indx, indx + len( templates_ ), 1 )
-                , len( templates_ ) 
-                )
-    else:
-        ranges = np.arange( 0, len( templates_ ) )
-
-    for i in ranges:
-        tmp = templates_[i]
-        tr, tc = tmp.shape    # Rows and cols in template.
-        loc = apply_template( frame, tmp )
-        if is_far_from_last_good_location( loc ):
-            continue 
-        else:
-            lastGoodLocation_ = loc
-            lastGoodTemplate_ = (i, tmp)
-            break
-    r, c = lastGoodLocation_
-    print( "Last known good location is %s" % str( lastGoodLocation_ ) )
-    return frame[c-100:c+100,r-100:r+100]
-
 
 def is_a_good_frame( frame ):
     if frame.max( ) < 100 or frame.min() > 150:
@@ -159,11 +135,6 @@ def find_edges( frame ):
     u, std = frame.mean(), frame.std()
     return cv2.Canny( frame, u, u + std, 11 )
 
-def on_the_mouse( p, frame ):
-    w = 20
-    c, r = p
-    rect = frame[c-w:c+w,r-w:r+w]
-
 def distance( p0, p1 ):
     x0, y0 = p0
     x1, y1 = p1
@@ -174,6 +145,39 @@ def draw_point( frame, points, thickness = 2):
         (x, y) = p.ravel()
         cv2.circle( frame, (x,y), 2, 30, thickness )
     return frame
+
+def update_template( frame ):
+    global curr_loc_ 
+    global template_
+    h = 50
+    c0, r0 = curr_loc_
+    h = min( c0, r0, h)
+    template_ = frame[ r0-h:r0+h, c0-h:c0+h ]
+    cv2.imshow( 'template', template_ )
+    cv2.waitKey( 1 )
+
+
+def fix_current_location( frame ):
+    """We have a hint of mouse location, now fix it by really locating the
+    aninal
+    """
+    global curr_loc_
+    global template_
+    try:
+        update_template( frame )
+        res = cv2.matchTemplate( frame, template_, cv2.TM_SQDIFF_NORMED )
+        minv, maxv, (y,x), maxl = cv2.minMaxLoc( res )
+        c0, r0 = curr_loc_
+        w, h = template_.shape
+        maxMatchPoint = (y+w/2, x+h/2)
+        # print( "loc", curr_loc_, " minl", maxMatchPoint )
+        # cv2.rectangle( frame, (y,x), (y+w,x+h), 100, 2 )
+        curr_loc_ = maxMatchPoint
+        cv2.circle( frame, curr_loc_, 10, 255, 3)
+        print( 'Successfully updated current loc', curr_loc_ )
+    except Exception as e:
+        print( 'Failed with %s' % e )
+        return 
 
 
 def update_mouse_location( points, frame ):
@@ -195,11 +199,9 @@ def update_mouse_location( points, frame ):
 
         # We don't want points which are far away from current location.
         if distance( (x,y), curr_loc_ ) > distance_threshold_:
-            print( 'd', end = '' )
             continue 
 
         # if this point is in one of static feature point, reject it
-        print( np.mean( static_features_img_ ) )
         if static_features_img_[ y, x ] > 1:
             continue
         newPoints.append( (x,y) )
@@ -209,14 +211,20 @@ def update_mouse_location( points, frame ):
     newPoints = np.array( newPoints )
     ellipse = None
     try:
-        ellipse = cv2.fitEllipse( newPoints )
+        if( len(newPoints) > 5 ):
+            ellipse = cv2.fitEllipse( newPoints )
     except Exception as e:
         pass
     if len( newPoints ) > 0:
         curr_loc_ = ( int(sumC / len( newPoints )), int(sumR / len( newPoints)) )
+        
+
+    ## Fix the current location
+    fix_current_location( frame )
     
     res[ 'ellipse' ] = ellipse 
     res[ 'contour' ] = newPoints
+
     return res
 
 def insert_int_corners( points ):
@@ -242,7 +250,6 @@ def track( cur ):
     p0 = cv2.goodFeaturesToTrack( cur, 200, 0.1, 5 )
     insert_int_corners( p0 )
     draw_point( cur, p0, 1 )
-
     res = update_mouse_location( p0, cur )
     p1 = res[ 'contour' ]
     ellipse = res[ 'ellipse' ]
@@ -253,28 +260,10 @@ def track( cur ):
     if ellipse is not None:
         # cv2.drawContours( cur, [p1], 0, 255, 2 )
         cv2.ellipse( cur, ellipse, 1 )
-    cv2.circle( cur, curr_loc_, 10, 255, 3)
+
     display_frame( cur, 1 )
-    # cv2.imshow( 'static features', static_features_img_ )
     return 
-    # Find a contour
-    prevE = find_edges( prev )
-    curE = find_edges( cur )
-    img = curE - prevE
-    cnts, hier = cv2.findContours( img, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_NONE )
-    cnts = filter( ismouse, cnts )
-    cv2.drawContours( img, cnts, -1, 255, 3 )
-    display_frame( img, 1)
-    return 
-    p1, status, err = cv2.calcOpticalFlowPyrLK( prev, cur, p0 )
-    mat = cv2.estimateRigidTransform( p0, p1, False )
-    # print cv2.warpAffine( curr_loc_, mat, dsize=(2,1) )
-    if mat is not None:
-        dx, dy = mat[:,2]
-        da = math.atan2( mat[1,0], mat[0,0] )
-        trajectory_.append( (dx, dy, da) )
-        print( "Transformation", dx, dy, da )
-        curr_loc_ = (curr_loc_[0] - int(dy), curr_loc_[1] - int(dx))
+
 
 def get_cap_props( ):
     global cap_
@@ -293,7 +282,7 @@ def get_cap_props( ):
 
 def process( args ):
     global cap_
-    global box_, templates_
+    global box_
     global curr_loc_ 
     global static_features_img_ 
     cap_ = cv2.VideoCapture( args.file )
