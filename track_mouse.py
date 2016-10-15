@@ -143,6 +143,16 @@ def is_a_good_frame( frame ):
         return False
     return True
 
+def fetch_n_frames_averaged( n = 1 ):
+    global cap_ 
+    frames = []
+    for i in range( n ):
+        ret, frame = cap_.read()
+        frames.append( cv2.cvtColor( frame, cv2.COLOR_BGR2GRAY) )
+    meanF = np.uint8( np.mean( np.dstack(frames), axis = 2 ))
+    print( meanF.shape )
+    return meanF
+
 def fetch_a_good_frame( drop = 0 ):
     global cap_
     for i in range( drop ):
@@ -150,7 +160,7 @@ def fetch_a_good_frame( drop = 0 ):
     ret, frame = cap_.read()
     if ret:
         if is_a_good_frame( frame ):
-            return frame
+            return toGrey( frame )
         else:
             return fetch_a_good_frame( )
     else:
@@ -187,6 +197,7 @@ def draw_point( frame, points, thickness = 2):
 def update_mouse_location( points ):
     global curr_loc_
     global static_features_
+    res = {}
     newPoints = [ ]
     if points is None:
         return None, None
@@ -198,7 +209,7 @@ def update_mouse_location( points ):
         x, y = int(x), int(y)
 
         # We don't want points which are far away from current location.
-        if distance( (x,y), curr_loc_ ) > 50:
+        if distance( (x,y), curr_loc_ ) > 100:
             continue 
 
         # if this point is in one of static feature point, reject it
@@ -209,14 +220,18 @@ def update_mouse_location( points ):
         sumR += y
         sumC += x
 
+    newPoints = np.array( newPoints )
     ellipse = None
     try:
-        ellipse = cv2.fitEllipse( np.array( newPoints ) )
+        ellipse = cv2.fitEllipse( newPoints )
     except Exception as e:
         pass
     if len( newPoints ) > 0:
         curr_loc_ = ( int(sumC / len( newPoints )), int(sumR / len( newPoints)) )
-    return ellipse, newPoints
+    
+    res[ 'ellipse' ] = ellipse 
+    res[ 'contour' ] = newPoints
+    return res
 
 def insert_int_corners( points ):
     """Insert or update feature points into an image by increasing the pixal
@@ -233,20 +248,27 @@ def insert_int_corners( points ):
         # static_features_img_[ y, x ] += 1
 
 
-def track_using_trajectories( cur, prev ):
+def track( cur ):
     global curr_loc_ 
     global static_features_img_
-    p0 = cv2.goodFeaturesToTrack( cur, 200, 0.01, 2 )
-    insert_int_corners( p0 )
+    # Apply a good bilinear filter. This will smoothen the image but preserve
+    # the edges.
+    cur = cv2.bilateralFilter( cur, 3, 50, 50 )
+    p0 = cv2.goodFeaturesToTrack( cur, 200, 0.01, 5 )
 
+    insert_int_corners( p0 )
     draw_point( cur, p0, 1 )
 
-    ellipse, p1 = update_mouse_location( p0 )
+    res = update_mouse_location( p0 )
+    p1 = res[ 'contour' ]
+    ellipse = res[ 'ellipse' ]
     if p1 is not None:
         for p in p1:
-            cv2.circle( cur, p, 10, 20, 2 )
+            (x, y) = p.ravel()
+            cv2.circle( cur, (x,y), 10, 20, 2 )
     if ellipse is not None:
-        cv2.ellipse( cur, ellipse, 1 )
+        cv2.drawContours( cur, [p1], 0, 255, 2 )
+        # cv2.ellipse( cur, ellipse, 1 )
     cv2.circle( cur, curr_loc_, 10, 255, 3)
     display_frame( cur, 1 )
     # cv2.imshow( 'static features', static_features_img_ )
@@ -280,7 +302,6 @@ def process( args ):
     fps = float( cap_.get( cv2.cv.CV_CAP_PROP_FPS ) )
     print( '[INFO] FPS = %f' % fps )
     cur = fetch_a_good_frame( )
-    cur = toGrey( cur )
     static_features_img_ = np.zeros( cur.shape )
     if args.col and args.row:
         curr_loc_ = (args.col, args.row )
@@ -292,11 +313,10 @@ def process( args ):
         if totalFramesDone + 1 >= nFames:
             print( '== All done' )
             break
-        prev = cur
-        cur = fetch_a_good_frame( )
-        cur = toGrey( cur )
+        # prev = cur
+        cur = fetch_a_good_frame( ) 
         # cur = threshold_frame( cur )
-        track_using_trajectories( cur, prev )
+        track( cur )
 
 def main(args):
     # Extract video first
