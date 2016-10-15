@@ -22,27 +22,27 @@ from collections import defaultdict
 import numpy as np
 
 trajectory_ = [ ]
-curr_loc_ = None
+curr_loc_ = (100, 100)
 static_features_ = defaultdict( int )
 static_features_img_ = None
 
-def onmouse(event, x, y, flags, params):
-    global current_frame_, bbox_
-    # Draw Rectangle
-    if event == cv2.EVENT_LBUTTONDOWN:
-        bbox_ = []
-        bbox_.append((x, y))
+# global window with callback function
+window_ = "Mouse tracker"
 
-    elif event == cv2.EVENT_LBUTTONUP:
-        bbox_.append((x, y))
-        cv2.rectangle(current_frame_, bbox_[0], (x,y), 0,2)
+def onmouse( event, x, y, flags, params ):
+    global curr_loc_
+    if event == cv2.EVENT_LBUTTONDOWN:
+        curr_loc_ = (x, y)
+        print( '[INFO] Current location updated to %s' % str( curr_loc_ ) )
+
 
 def toGrey( frame ):
     return cv2.cvtColor( frame, cv2.COLOR_BGR2GRAY )
 
 def display_frame( frame, delay = 40 ):
+    global window_ 
     try:
-        cv2.imshow( 'frame', frame )
+        cv2.imshow( window_, frame )
         cv2.waitKey( delay )
     except Exception as e:
         print( '[warn] could not display frame' )
@@ -68,29 +68,10 @@ def apply_template( frame, tmp ):
     minv, maxv, minl, maxl = minmax
     return minl
 
-def onmouse( event, x, y, flags, params ):
-    if event == cv2.EVENT_LBUTTONDOWN:
-        curr_loc_ = (x, y)
-        print( '[INFO] Current location is %s' % str( curr_loc_ ) )
-
-def initialize_location( frame ):
-    global curr_loc_
-    current_frame_ = frame.copy()
-    title = "Click on mouse 'q' to quit 'n' for next frame"
-    cv2.namedWindow(title)
-    cv2.setMouseCallback(title, onmouse)
-    clone = frame.copy()
-    while True:
-        cv2.imshow(title, current_frame_)
-        key = cv2.waitKey(1) & 0xFF
-        if key == ord("c"):
-            current_frame_ = clone.copy()
-        elif key == ord( "n" ):
-            current_frame_ = fetch_a_good_frame( )
-        elif key == ord("q"):
-            break
-    cv2.waitKey(1)
-    cv2.destroyWindow( title )
+def initialize_global_window( ):
+    global window_ 
+    cv2.namedWindow( window_ )
+    cv2.setMouseCallback(window_, onmouse)
 
 def is_far_from_last_good_location( loc ):
     global lastGoodLocation_ 
@@ -303,10 +284,6 @@ def process( args ):
     print( '[INFO] FPS = %f' % fps )
     cur = fetch_a_good_frame( )
     static_features_img_ = np.zeros( cur.shape )
-    if args.col and args.row:
-        curr_loc_ = (args.col, args.row )
-    else:
-        curr_loc_ =  initialize_location( cur )
     # cur = threshold_frame( cur )
     while True:
         totalFramesDone = cap_.get( cv2.cv.CV_CAP_PROP_POS_FRAMES ) 
@@ -315,11 +292,13 @@ def process( args ):
             break
         # prev = cur
         cur = fetch_a_good_frame( ) 
+        assert cur.any()
         # cur = threshold_frame( cur )
         track( cur )
 
 def main(args):
     # Extract video first
+    initialize_global_window( )
     process( args )
 
 if __name__ == '__main__':
@@ -348,10 +327,14 @@ if __name__ == '__main__':
         )
 
     parser.add_argument('--col', '-c'
-            , required = True , type = int , help = 'Column of mouse'
+            , required = False 
+            , type = int
+            , help = 'Column of mouse'
             )
     parser.add_argument('--row', '-r'
-            , required = True , type = int, help = 'Row index of mouse'
+            , required = False 
+            , type = int
+            , help = 'Row index of mouse'
             )
     parser.parse_args(namespace=args)
     main( args )
