@@ -248,8 +248,8 @@ def track( cur ):
             (x, y) = p.ravel()
             cv2.circle( cur, (x,y), 10, 20, 2 )
     if ellipse is not None:
-        cv2.drawContours( cur, [p1], 0, 255, 2 )
-        # cv2.ellipse( cur, ellipse, 1 )
+        # cv2.drawContours( cur, [p1], 0, 255, 2 )
+        cv2.ellipse( cur, ellipse, 1 )
     cv2.circle( cur, curr_loc_, 10, 255, 3)
     display_frame( cur, 1 )
     # cv2.imshow( 'static features', static_features_img_ )
@@ -273,13 +273,8 @@ def track( cur ):
         print( "Transformation", dx, dy, da )
         curr_loc_ = (curr_loc_[0] - int(dy), curr_loc_[1] - int(dx))
 
-def process( args ):
+def get_cap_props( ):
     global cap_
-    global box_, templates_
-    global curr_loc_ 
-    global static_features_img_ 
-    cap_ = cv2.VideoCapture( args.file )
-
     nFrame = 0
     try:
         nFames = cap_.get( cv2.cv.CV_CAP_PROP_FRAME_COUNT )
@@ -290,6 +285,18 @@ def process( args ):
         fps = float( cap_.get( cv2.cv.CV_CAP_PROP_FPS ) )
     except Exception as e:
         fps = float( cap_.get( cv2.CAP_PROP_FPS ) )
+
+    return nFames, fps 
+
+def process( args ):
+    global cap_
+    global box_, templates_
+    global curr_loc_ 
+    global static_features_img_ 
+    cap_ = cv2.VideoCapture( args.file )
+    assert cap_
+    nFames, fps = get_cap_props( )
+
     print( '[INFO] FPS = %f' % fps )
     cur = fetch_a_good_frame( )
     static_features_img_ = np.zeros( cur.shape )
