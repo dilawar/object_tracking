@@ -26,21 +26,51 @@ curr_loc_ = (100, 100)
 static_features_ = defaultdict( int )
 static_features_img_ = None
 distance_threshold_ = 200
-template_ = None
+
+# To keep track of template coordinates.
+bbox_ = [ ]
+
+# Current frame
+frame_ = None
 
 # global window with callback function
 window_ = "Mouse tracker"
 
+
+# This is our template. Use must select it to begin with.
+template_ = None
+
+
 def onmouse( event, x, y, flags, params ):
-    global curr_loc_
+    global curr_loc_, frame_, window_ 
+    global bbox_
     global template_
-    if event == cv2.EVENT_LBUTTONDOWN:
-        curr_loc_ = (x, y)
-        print( '[INFO] Current location updated to %s' % str( curr_loc_ ) )
+
+    if template_ is None:
+        # Draw Rectangle. Click and drag to next location then release.
+        if event == cv2.EVENT_LBUTTONDOWN:
+            bbox_ = []
+            bbox_.append((x, y))
+        elif event == cv2.EVENT_LBUTTONUP:
+            bbox_.append((x, y))
+
+        if len( bbox_ ) == 2:
+            print( 'bbox_ : %s and %s' % (bbox_[0], bbox_[1]) )
+            cv2.rectangle( frame_, bbox_[0], bbox_[1], 100, 2)
+            ((x0,y0),(x1,y1)) = bbox_ 
+            template_ = frame_[y0:y1,r0:r1]
+            cv2.imshow( window_, frame_ )
+
+    # Else user is updating the current location of animal.
+    else:
+        if event == cv2.EVENT_LBUTTONDOWN:
+            curr_loc_ = (x, y)
+            print( '[INFO] Current location updated to %s' % str( curr_loc_ ) )
 
 
 def toGrey( frame ):
     return cv2.cvtColor( frame, cv2.COLOR_BGR2GRAY )
+
 
 def display_frame( frame, delay = 40 ):
     global window_ 
@@ -51,46 +81,32 @@ def display_frame( frame, delay = 40 ):
         print( '[warn] could not display frame' )
         print( '\t Error was %s' % e )
 
+
 def clip_frame( frame, box ):
     (r1, c1), (r2, c2 ) = box
     return frame[c1:c2,r1:r2]
 
-def generate_box( (c,r), width, height ):
-    if width < 0: 
-        width = 10
-    if height < 0 : 
-        height = 10
-    leftCorner = ( max(0,c - width / 2), max(0, r - height / 2 ) )
-    rightCorner = (leftCorner[0] + width, leftCorner[1] + height)
-    return leftCorner, rightCorner 
 
-def apply_template( frame, tmp ):
-    tr, tc = tmp.shape    # Rows and cols in template.
-    res = None
-    try:
-        res = cv2.matchTemplate( frame, tmp, cv2.TM_SQDIFF_NORMED )
-    except Exception as e:
-        return 
-
-    minmax = cv2.minMaxLoc( res )
-    minv, maxv, minl, maxl = minmax
-    return minl
+def initialize_template( ):
+    global window_, frame_
+    global template_, bbox_
+    cv2.setMouseCallback(window_, onmouse)
+    if template_ is None:
+        while True:
+            cv2.imshow( window_, frame_ )
+            key = cv2.waitKey( 1 ) & 0xFF
+            if key == ord( 'n' ):
+                print( '[INFO] Dropping this frame' )
+                frame_ = fetch_a_good_frame( )
+            elif key == ord( 'r' ):
+                bbox_ = []
+                template_ = None
+            elif key == ord( 'q' ):
+                break
 
 def initialize_global_window( ):
     global window_ 
     cv2.namedWindow( window_ )
-    cv2.setMouseCallback(window_, onmouse)
-
-def is_far_from_last_good_location( loc ):
-    global lastGoodLocation_ 
-    if lastGoodLocation_ is None:
-        return False
-    x1, y1 = lastGoodLocation_ 
-    x2, y2 = loc 
-    dist = ((x1 - x2) ** 2 + (y1 - y2) ** 2) ** 0.5 
-    if dist < 5.0:
-        return True
-    return False
 
 def is_a_good_frame( frame ):
     if frame.max( ) < 100 or frame.min() > 150:
@@ -269,31 +285,27 @@ def get_cap_props( ):
     global cap_
     nFrame = 0
     try:
-        nFames = cap_.get( cv2.cv.CV_CAP_PROP_FRAME_COUNT )
+        nFrames = cap_.get( cv2.cv.CV_CAP_PROP_FRAME_COUNT )
     except Exception as e:
-        nFames = cap_.get( cv2.CAP_PROP_FRAME_COUNT )
+        nFrames = cap_.get( cv2.CAP_PROP_FRAME_COUNT )
     fps = 0.0
     try:
         fps = float( cap_.get( cv2.cv.CV_CAP_PROP_FPS ) )
     except Exception as e:
         fps = float( cap_.get( cv2.CAP_PROP_FPS ) )
 
-    return nFames, fps 
+    return nFrames, fps 
 
 def process( args ):
     global cap_
     global box_
-    global curr_loc_ 
+    global curr_loc_, frame_
     global static_features_img_ 
-    cap_ = cv2.VideoCapture( args.file )
-    assert cap_
-    nFames, fps = get_cap_props( )
 
+    nFrames, fps = get_cap_props( )
     print( '[INFO] FPS = %f' % fps )
-    cur = fetch_a_good_frame( )
 
-    static_features_img_ = np.zeros( cur.shape )
-    # cur = threshold_frame( cur )
+    static_features_img_ = np.zeros( frame_.shape )
     while True:
         totalFramesDone = -1
         try:
@@ -301,14 +313,14 @@ def process( args ):
         except Exception as e:
             totalFramesDone = cap_.get( cv2.CAP_PROP_POS_FRAMES ) 
 
-        if totalFramesDone + 1 >= nFames:
+        if totalFramesDone + 1 >= nFrames:
             print( '== All done' )
             break
         # prev = cur
-        cur = fetch_a_good_frame( ) 
-        assert cur.any()
+        frame_ = fetch_a_good_frame( ) 
+        assert frame_.any()
         # cur = threshold_frame( cur )
-        track( cur )
+        track( frame_ )
 
         # After every 5 frame, Divide the static_features_img_.
         if totalFramesDone % 5 == 0:
@@ -316,7 +328,15 @@ def process( args ):
 
 def main(args):
     # Extract video first
+    global cap_, frame_
     initialize_global_window( )
+    cap_ = cv2.VideoCapture( args.file )
+    assert cap_
+
+    frame_ = fetch_a_good_frame( )
+
+    # Let user draw rectangle around animal on first frame.
+    initialize_template( )
     process( args )
 
 if __name__ == '__main__':
