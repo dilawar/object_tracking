@@ -706,7 +706,7 @@ def _runSubprocess(cmd, input):
     '''
 
     process = subprocess.Popen(cmd, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-    out, err = process.communicate(input=input)
+    out, err = process.communicate(input=b'%s' % input)
     retcode = process.poll()
     if retcode:
         raise subprocess.CalledProcessError(retcode, cmd[0], output=out + err)
@@ -721,7 +721,7 @@ def _getGnuplotFeatures():
 
     # first, I run 'gnuplot --help' to extract all the cmdline options as features
     helpstring = subprocess.check_output(['gnuplot', '--help'], stderr=subprocess.STDOUT)
-    features = set( re.findall(r'--([a-zA-Z0-9_]+)', helpstring) )
+    features = set( re.findall(b'--([a-zA-Z0-9_]+)', helpstring ) )
 
 
     # then I try to set a square aspect ratio for 3D to see if it works
@@ -1197,9 +1197,11 @@ and/or gnuplot itself. Please report this as a gnuplotlib bug''')
 
         t = time.time() - self.t0
 
-        print( "==== PID {} at t={:.4f}: {}".format(self.gnuplotProcess.pid if self.gnuplotProcess else '(none)',
-                                                   t, event),
-               file=sys.stderr )
+        pId = '(none)'
+        if self.gnuplotProcess:
+            pId = gnuplotProcess.pid 
+        msg = "==== PID %s at t=%.4f: %s" % ( pId, t, event )
+        print( msg )
 
 
     def _sendCurve(self, curve):

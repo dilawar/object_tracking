@@ -33,8 +33,8 @@ trajectory_file_ = None
 # To keep track of template coordinates.
 bbox_ = [ ]
 
-# Current frame
-frame_ = None
+frame_ = None # Current frame.
+nframe_ = 0   # Index of currnet frame
 
 # global window with callback function
 window_ = "Mouse tracker"
@@ -123,8 +123,10 @@ def is_a_good_frame( frame ):
 
 def fetch_a_good_frame( drop = 0 ):
     global cap_
+    global nframe_
     for i in range( drop ):
         ret, frame = cap_.read()
+        nframe_ += 1
     ret, frame = cap_.read()
     if ret:
         if is_a_good_frame( frame ):
@@ -177,8 +179,9 @@ def fix_current_location( frame ):
         trajectory_.append( curr_loc_ )
         print( 'Current loc to ', curr_loc_ )
         # Append to trajectory file.
+        done, totalF, fps = get_cap_props( )
         with open( trajectory_file_, 'a' ) as trajF:
-            trajF.write( '%d %d\n' % curr_loc_ )
+            trajF.write( '%g %d %d\n' % ( totalF / float( fps ), curr_loc_) )
 
     except Exception as e:
         print( 'Failed with %s' % e )
@@ -195,8 +198,7 @@ def update_mouse_location( points, frame ):
     newPoints = [ ]
     if points is None:
         return None, None
-    sumC = 0.0
-    sumR = 0.0
+    sumC, sumR = 0.0, 0.0
 
     for p in points:
         (x,y) = p.ravel( )
@@ -262,14 +264,14 @@ def track( cur ):
     res = update_mouse_location( p0, cur )
     p1 = res[ 'contour' ]
     ellipse = res[ 'ellipse' ]
-    if p1 is not None:
-        for p in p1:
-            (x, y) = p.ravel()
-            cv2.circle( cur, (x,y), 10, 20, 2 )
-    if ellipse is not None:
+    # if p1 is not None:
+        # for p in p1:
+            # (x, y) = p.ravel()
+            # cv2.circle( cur, (x,y), 10, 20, 2 )
+    # if ellipse is not None:
         # cv2.drawContours( cur, [p1], 0, 255, 2 )
         # cv2.ellipse( cur, ellipse, 1 )
-        pass
+        # pass
 
     display_frame( cur, 1 )
     # Plot the trajectory
@@ -279,7 +281,7 @@ def track( cur ):
         # Smooth them
         cols, rows = [ smooth( a, 20 ) for a in [y,x] ]
         gpl.plot( cols, rows 
-                , terminal = 'x11', _with = 'point' 
+                , terminal = 'x11', _with = 'line' 
                 # To make sure the origin is located at top-left. 
                 , cmds  = [ 'set yrange [:] reverse' ]
                 )
@@ -299,36 +301,44 @@ def get_cap_props( ):
     except Exception as e:
         fps = float( cap_.get( cv2.CAP_PROP_FPS ) )
 
-    return nFrames, fps 
+    totalFramesDone = 0
+    try:
+        totalFramesDone = cap_.get( cv2.cv.CV_CAP_PROP_POS_FRAMES ) 
+    except Exception as e:
+        totalFramesDone = cap_.get( cv2.CAP_PROP_POS_FRAMES ) 
+
+    return totalFramesDone, nFrames, fps 
 
 def process( args ):
     global cap_
     global box_
     global curr_loc_, frame_
+    global nframe_
     global static_features_img_ 
 
-    nFrames, fps = get_cap_props( )
+    nFrames, fps, nframe_ = get_cap_props( )
     print( '[INFO] FPS = %f' % fps )
 
     static_features_img_ = np.zeros( frame_.shape )
     while True:
-        totalFramesDone = -1
         try:
-            totalFramesDone = cap_.get( cv2.cv.CV_CAP_PROP_POS_FRAMES ) 
+            nframe_ = cap_.get( cv2.cv.CV_CAP_PROP_POS_FRAMES ) 
         except Exception as e:
-            totalFramesDone = cap_.get( cv2.CAP_PROP_POS_FRAMES ) 
+            nframe_ = cap_.get( cv2.CAP_PROP_POS_FRAMES ) 
 
-        if totalFramesDone + 1 >= nFrames:
+        if nframe_ + 1 >= nFrames:
             print( '== All done' )
             break
-        # prev = cur
+
         frame_ = fetch_a_good_frame( ) 
         assert frame_.any()
-        # cur = threshold_frame( cur )
         track( frame_ )
 
-        # After every 5 frame, Divide the static_features_img_.
-        if totalFramesDone % 3 == 0:
+        # After every 3 frame, Divide the static_features_img_ by its maximum
+        # value. This way we don't over-estimate the static point. Sometime
+        # animal may not move at all and if we don't do this, we will ignore all
+        # good corners on the mouse.
+        if nframe_ % 3 == 0:
             static_features_img_ /=  static_features_img_.max()
 
 def main(args):
@@ -338,7 +348,7 @@ def main(args):
 
     trajectory_file_ = '%s_traj.csv' % args.file 
     with open( trajectory_file_, 'w' ) as f:
-        f.write( 'column row\n' )
+        f.write( 'time column row\n' )
 
     initialize_global_window( )
     cap_ = cv2.VideoCapture( args.file )
@@ -358,8 +368,7 @@ if __name__ == '__main__':
     class Args: pass 
     args = Args()
     parser.add_argument('--file', '-f'
-        , required = False
-        , default = 0
+        , required = True
         , help = 'Path of the video file or camera index. default camera 0'
         )
     parser.add_argument('--verbose', '-v'
