@@ -20,6 +20,7 @@ import cv2
 import math
 from collections import defaultdict
 import numpy as np
+import gnuplotlib as gpl
 
 trajectory_ = [ ]
 curr_loc_ = (100, 100)
@@ -27,6 +28,7 @@ static_features_ = defaultdict( int )
 static_features_img_ = None
 distance_threshold_ = 200
 
+trajectory_file_ = None
 
 # To keep track of template coordinates.
 bbox_ = [ ]
@@ -60,7 +62,7 @@ def onmouse( event, x, y, flags, params ):
             cv2.rectangle( frame_, bbox_[0], bbox_[1], 100, 2)
             ((x0,y0),(x1,y1)) = bbox_ 
             template_size_ = (y1-y0, x1-x0)
-            template_ = frame_[y0:y1,r0:r1]
+            template_ = frame_[y0:y1,x0:x1]
             cv2.imshow( window_, frame_ )
 
     # Else user is updating the current location of animal.
@@ -151,8 +153,8 @@ def update_template( frame ):
     c0, r0 = curr_loc_
     h = min( c0, r0, h, w)
     template_ = frame[ r0-h:r0+h, c0-h:c0+h ]
-    cv2.imshow( 'template', template_ )
-    cv2.waitKey( 1 )
+    # cv2.imshow( 'template', template_ )
+    # cv2.waitKey( 1 )
 
 
 def fix_current_location( frame ):
@@ -174,6 +176,10 @@ def fix_current_location( frame ):
         cv2.circle( frame, curr_loc_, 10, 255, 3)
         trajectory_.append( curr_loc_ )
         print( 'Current loc to ', curr_loc_ )
+        # Append to trajectory file.
+        with open( trajectory_file_, 'a' ) as trajF:
+            trajF.write( '%d %d\n' % curr_loc_ )
+
     except Exception as e:
         print( 'Failed with %s' % e )
         return 
@@ -239,10 +245,14 @@ def insert_int_corners( points ):
         (x,y) = p.ravel()
         static_features_img_[ y, x ] += 1
 
+def smooth( vec, N = 10 ):
+    window = np.ones( N ) / N
+    return np.correlate( vec, window, 'valid' )
 
 def track( cur ):
     global curr_loc_ 
     global static_features_img_
+    global trajectory_
     # Apply a good bilinear filter. This will smoothen the image but preserve
     # the edges.
     cur = cv2.bilateralFilter( cur, 5, 50, 50 )
@@ -262,6 +272,17 @@ def track( cur ):
         pass
 
     display_frame( cur, 1 )
+    # Plot the trajectory
+    # toPlot = zip(*trajectory_[-100:]) 
+    if len( trajectory_ ) % 20 == 0:
+        y, x = zip( *trajectory_ )
+        # Smooth them
+        cols, rows = [ smooth( a, 20 ) for a in [y,x] ]
+        gpl.plot( cols, rows 
+                , terminal = 'x11', _with = 'point' 
+                # To make sure the origin is located at top-left. 
+                , cmds  = [ 'set yrange [:] reverse' ]
+                )
     return 
 
 
@@ -313,6 +334,12 @@ def process( args ):
 def main(args):
     # Extract video first
     global cap_, frame_
+    global trajectory_file_ 
+
+    trajectory_file_ = '%s_traj.csv' % args.file 
+    with open( trajectory_file_, 'w' ) as f:
+        f.write( 'column row\n' )
+
     initialize_global_window( )
     cap_ = cv2.VideoCapture( args.file )
     assert cap_
