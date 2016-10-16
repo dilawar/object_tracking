@@ -27,7 +27,6 @@ curr_loc_ = (100, 100)
 static_features_ = defaultdict( int )
 static_features_img_ = None
 distance_threshold_ = 200
-
 trajectory_file_ = None
 
 # To keep track of template coordinates.
@@ -35,6 +34,7 @@ bbox_ = [ ]
 
 frame_ = None # Current frame.
 nframe_ = 0   # Index of currnet frame
+fps_ = 1      # Frame per seocond
 
 # global window with callback function
 window_ = "Mouse tracker"
@@ -100,7 +100,7 @@ def initialize_template( ):
             cv2.imshow( window_, frame_ )
             key = cv2.waitKey( 1 ) & 0xFF
             if key == ord( 'n' ):
-                print( '[INFO] Dropping this frame' )
+                # print( '[INFO] Dropping this frame' )
                 frame_ = fetch_a_good_frame( )
             elif key == ord( 'r' ):
                 bbox_ = []
@@ -114,10 +114,10 @@ def initialize_global_window( ):
 
 def is_a_good_frame( frame ):
     if frame.max( ) < 100 or frame.min() > 150:
-        print( '[WARN] not a good frame: too bright or dark' )
+        # print( '[WARN] not a good frame: too bright or dark' )
         return False
     if frame.mean( ) < 50 or frame.mean() > 200:
-        print( '[WARN] not a good frame: not much variation' )
+        # print( '[WARN] not a good frame: not much variation' )
         return False
     return True
 
@@ -134,7 +134,7 @@ def fetch_a_good_frame( drop = 0 ):
         else:
             return fetch_a_good_frame( )
     else:
-        print( '[Warn] Failed to fetch a frame' )
+        print( "Can't fetch anymore. All done" )
         return None
 
 def distance( p0, p1 ):
@@ -163,7 +163,7 @@ def fix_current_location( frame ):
     """We have a hint of mouse location, now fix it by really locating the
     aninal
     """
-    global curr_loc_
+    global curr_loc_, nframe_
     global template_
     global trajectory_
     try:
@@ -177,12 +177,13 @@ def fix_current_location( frame ):
         curr_loc_ = maxMatchPoint
         cv2.circle( frame, curr_loc_, 10, 255, 3)
         trajectory_.append( curr_loc_ )
-        print( 'Current loc to ', curr_loc_ )
+        print( '- Time %.2f, Current loc %s', ( nframe_/fps_, str(curr_loc_)))
+        time = nframe_ / float( fps_ )
         # Append to trajectory file.
-        done, totalF, fps = get_cap_props( )
+        # done, totalF, fps = get_cap_props( )
         with open( trajectory_file_, 'a' ) as trajF:
             c0, r0 = curr_loc_
-            trajF.write( '%g %d %d\n' % ( totalF / float( fps ), c0, r0) )
+            trajF.write( '%g %d %d\n' % (time, c0, r0) )
 
     except Exception as e:
         print( 'Failed with %s' % e )
@@ -313,25 +314,25 @@ def get_cap_props( ):
 def process( args ):
     global cap_
     global box_
-    global curr_loc_, frame_
+    global curr_loc_, frame_, fps_
     global nframe_
     global static_features_img_ 
 
     nframe_, totalFrames, fps = get_cap_props( )
     print( '[INFO] FPS = %f' % fps )
+    if fps > 1: fps_ = fps
 
     static_features_img_ = np.zeros( frame_.shape )
     while True:
-        try:
-            nframe_ = cap_.get( cv2.cv.CV_CAP_PROP_POS_FRAMES ) 
-        except Exception as e:
-            nframe_ = cap_.get( cv2.CAP_PROP_POS_FRAMES ) 
-
+        nframe_ += 1
         if nframe_ + 1 >= totalFrames:
             print( '== All done' )
             break
 
         frame_ = fetch_a_good_frame( ) 
+        if frame_ is None:
+            break
+
         assert frame_.any()
         track( frame_ )
 
@@ -339,10 +340,11 @@ def process( args ):
         # value. This way we don't over-estimate the static point. Sometime
         # animal may not move at all and if we don't do this, we will ignore all
         # good corners on the mouse.
-        if nframe_ % 3 == 0:
-            static_features_img_ /=  static_features_img_.max()
+        if nframe_ % 5 == 0:
+            static_features_img_ /=  5.0
 
         print( '[INFO] Done %d frames out of %d' % ( nframe_, totalFrames ))
+    print( '== All done' )
 
 def main(args):
     # Extract video first
