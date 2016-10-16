@@ -27,6 +27,7 @@ static_features_ = defaultdict( int )
 static_features_img_ = None
 distance_threshold_ = 200
 
+
 # To keep track of template coordinates.
 bbox_ = [ ]
 
@@ -36,15 +37,15 @@ frame_ = None
 # global window with callback function
 window_ = "Mouse tracker"
 
-
 # This is our template. Use must select it to begin with.
 template_ = None
+template_size_ = None
 
 
 def onmouse( event, x, y, flags, params ):
     global curr_loc_, frame_, window_ 
     global bbox_
-    global template_
+    global template_, template_size_
 
     if template_ is None:
         # Draw Rectangle. Click and drag to next location then release.
@@ -58,6 +59,7 @@ def onmouse( event, x, y, flags, params ):
             print( 'bbox_ : %s and %s' % (bbox_[0], bbox_[1]) )
             cv2.rectangle( frame_, bbox_[0], bbox_[1], 100, 2)
             ((x0,y0),(x1,y1)) = bbox_ 
+            template_size_ = (y1-y0, x1-x0)
             template_ = frame_[y0:y1,r0:r1]
             cv2.imshow( window_, frame_ )
 
@@ -117,16 +119,6 @@ def is_a_good_frame( frame ):
         return False
     return True
 
-def fetch_n_frames_averaged( n = 1 ):
-    global cap_ 
-    frames = []
-    for i in range( n ):
-        ret, frame = cap_.read()
-        frames.append( cv2.cvtColor( frame, cv2.COLOR_BGR2GRAY) )
-    meanF = np.uint8( np.mean( np.dstack(frames), axis = 2 ))
-    print( meanF.shape )
-    return meanF
-
 def fetch_a_good_frame( drop = 0 ):
     global cap_
     for i in range( drop ):
@@ -141,16 +133,6 @@ def fetch_a_good_frame( drop = 0 ):
         print( '[Warn] Failed to fetch a frame' )
         return None
 
-def threshold_frame( frame ):
-    mean, std = frame.mean(), frame.std( )
-    thres = max(0, mean - 2*std)
-    frame[ frame > thres ] = 255
-    return frame
-
-def find_edges( frame ):
-    u, std = frame.mean(), frame.std()
-    return cv2.Canny( frame, u, u + std, 11 )
-
 def distance( p0, p1 ):
     x0, y0 = p0
     x1, y1 = p1
@@ -164,10 +146,10 @@ def draw_point( frame, points, thickness = 2):
 
 def update_template( frame ):
     global curr_loc_ 
-    global template_
-    h = 50
+    global template_, template_size_
+    h, w = template_size_ 
     c0, r0 = curr_loc_
-    h = min( c0, r0, h)
+    h = min( c0, r0, h, w)
     template_ = frame[ r0-h:r0+h, c0-h:c0+h ]
     cv2.imshow( 'template', template_ )
     cv2.waitKey( 1 )
@@ -179,6 +161,7 @@ def fix_current_location( frame ):
     """
     global curr_loc_
     global template_
+    global trajectory_
     try:
         update_template( frame )
         res = cv2.matchTemplate( frame, template_, cv2.TM_SQDIFF_NORMED )
@@ -186,11 +169,11 @@ def fix_current_location( frame ):
         c0, r0 = curr_loc_
         w, h = template_.shape
         maxMatchPoint = (y+w/2, x+h/2)
-        # print( "loc", curr_loc_, " minl", maxMatchPoint )
-        # cv2.rectangle( frame, (y,x), (y+w,x+h), 100, 2 )
+        # cv2.circle( frame, curr_loc_, 5, 100, 5)
         curr_loc_ = maxMatchPoint
         cv2.circle( frame, curr_loc_, 10, 255, 3)
-        print( 'Successfully updated current loc', curr_loc_ )
+        trajectory_.append( curr_loc_ )
+        print( 'Current loc to ', curr_loc_ )
     except Exception as e:
         print( 'Failed with %s' % e )
         return 
@@ -218,7 +201,7 @@ def update_mouse_location( points, frame ):
             continue 
 
         # if this point is in one of static feature point, reject it
-        if static_features_img_[ y, x ] > 1:
+        if static_features_img_[ y, x ] > 1.5:
             continue
         newPoints.append( (x,y) )
         sumR += y
@@ -275,7 +258,8 @@ def track( cur ):
             cv2.circle( cur, (x,y), 10, 20, 2 )
     if ellipse is not None:
         # cv2.drawContours( cur, [p1], 0, 255, 2 )
-        cv2.ellipse( cur, ellipse, 1 )
+        # cv2.ellipse( cur, ellipse, 1 )
+        pass
 
     display_frame( cur, 1 )
     return 
@@ -323,8 +307,8 @@ def process( args ):
         track( frame_ )
 
         # After every 5 frame, Divide the static_features_img_.
-        if totalFramesDone % 5 == 0:
-            static_features_img_ = static_features_img_ / 5
+        if totalFramesDone % 3 == 0:
+            static_features_img_ /=  static_features_img_.max()
 
 def main(args):
     # Extract video first
