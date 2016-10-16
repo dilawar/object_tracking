@@ -69,7 +69,7 @@ def onmouse( event, x, y, flags, params ):
     else:
         if event == cv2.EVENT_LBUTTONDOWN:
             curr_loc_ = (x, y)
-            print( '[INFO] Current location updated to %s' % str( curr_loc_ ) )
+            # print( '[INFO] Current location updated to %s' % str( curr_loc_ ) )
 
 
 def toGrey( frame ):
@@ -181,7 +181,8 @@ def fix_current_location( frame ):
         # Append to trajectory file.
         done, totalF, fps = get_cap_props( )
         with open( trajectory_file_, 'a' ) as trajF:
-            trajF.write( '%g %d %d\n' % ( totalF / float( fps ), curr_loc_) )
+            c0, r0 = curr_loc_
+            trajF.write( '%g %d %d\n' % ( totalF / float( fps ), c0, r0) )
 
     except Exception as e:
         print( 'Failed with %s' % e )
@@ -316,7 +317,7 @@ def process( args ):
     global nframe_
     global static_features_img_ 
 
-    nFrames, fps, nframe_ = get_cap_props( )
+    nframe_, totalFrames, fps = get_cap_props( )
     print( '[INFO] FPS = %f' % fps )
 
     static_features_img_ = np.zeros( frame_.shape )
@@ -326,7 +327,7 @@ def process( args ):
         except Exception as e:
             nframe_ = cap_.get( cv2.CAP_PROP_POS_FRAMES ) 
 
-        if nframe_ + 1 >= nFrames:
+        if nframe_ + 1 >= totalFrames:
             print( '== All done' )
             break
 
@@ -340,6 +341,8 @@ def process( args ):
         # good corners on the mouse.
         if nframe_ % 3 == 0:
             static_features_img_ /=  static_features_img_.max()
+
+        print( '[INFO] Done %d frames out of %d' % ( nframe_, totalFrames ))
 
 def main(args):
     # Extract video first
