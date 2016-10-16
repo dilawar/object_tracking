@@ -666,7 +666,7 @@ fonts and sizes can be changed.
 
 
 
-from __future__ import print_function
+
 
 import subprocess
 import time
@@ -1477,7 +1477,7 @@ and/or gnuplot itself. Please report this as a gnuplotlib bug''')
 
             # grab all option keys that have numpy arrays as values. I broadcast
             # these as well
-            np_options_keys = [ k for k in curve.keys()
+            np_options_keys = [ k for k in list(curve.keys())
                                 if isinstance(curve[k], np.ndarray) ]
             N_options_keys = len(np_options_keys)
             prototype_np_options = ((),) * N_options_keys
