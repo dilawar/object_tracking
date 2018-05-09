@@ -1,4 +1,4 @@
-#!/usr/bin/env python
+#!/usr/bin/env python2
 
 from __future__ import print_function 
 
@@ -155,8 +155,8 @@ def update_template( frame ):
     c0, r0 = curr_loc_
     h = min( c0, r0, h, w)
     template_ = frame[ r0-h:r0+h, c0-h:c0+h ]
-    # cv2.imshow( 'template', template_ )
-    # cv2.waitKey( 1 )
+    cv2.imshow( 'template', template_ )
+    cv2.waitKey( 1 )
 
 
 def fix_current_location( frame ):
@@ -326,7 +326,7 @@ def process( args ):
     while True:
         nframe_ += 1
         if nframe_ + 1 >= totalFrames:
-            print( '== All done' )
+            print( '== All done. Total frames %d' % nframe_ )
             break
 
         frame_ = fetch_a_good_frame( ) 
