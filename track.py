@@ -131,13 +131,17 @@ def readOrNext( cap ):
     return True, cap.next( ).asarray( )
 
 def fetch_a_good_frame( drop = 0 ):
-    global cap_
+    global cap_, bbox_
     global nframe_
+    if bbox_:
+        ((x0,y0),(x1,y1)) = bbox_ 
     for i in range( drop ):
         ret, frame = readOrNext( cap_ )
         nframe_ += 1
     ret, frame = readOrNext( cap_ )
-    return  frame
+    if bbox_:
+         frame = frame[y0:y1,x0:x1] 
+    return frame
 
 def distance( p0, p1 ):
     x0, y0 = p0
