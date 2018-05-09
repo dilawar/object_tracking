@@ -21,6 +21,7 @@ import math
 from collections import defaultdict
 import numpy as np
 import gnuplotlib as gpl
+import tifffile
 
 trajectory_ = [ ]
 curr_loc_ = (100, 100)
@@ -73,7 +74,12 @@ def onmouse( event, x, y, flags, params ):
 
 
 def toGrey( frame ):
-    return cv2.cvtColor( frame, cv2.COLOR_BGR2GRAY )
+    if frame.max( ) < 255:
+        return frame
+    try:
+        return cv2.cvtColor( frame, cv2.COLOR_BGR2GRAY )
+    except Exception as e:
+        return frame
 
 
 def display_frame( frame, delay = 40 ):
@@ -121,13 +127,19 @@ def is_a_good_frame( frame ):
         return False
     return True
 
+def readOrNext( cap ):
+    try:
+        return cap.read( )
+    except Exception as e:
+        return True, cap.next( ).asarray( )
+
 def fetch_a_good_frame( drop = 0 ):
     global cap_
     global nframe_
     for i in range( drop ):
-        ret, frame = cap_.read()
+        ret, frame = readOrNext( cap_ )
         nframe_ += 1
-    ret, frame = cap_.read()
+    ret, frame = readOrNext( cap_ )
     if ret:
         if is_a_good_frame( frame ):
             return toGrey( frame )
@@ -356,7 +368,11 @@ def main(args):
         f.write( 'time column row\n' )
 
     initialize_global_window( )
-    cap_ = cv2.VideoCapture( args.file )
+    if '.tif' in args.file[-4:]:
+        print( 'Reading a tiff file' )
+        cap_ = (x for x in tifffile.TiffFile( args.file ).pages )
+    else:
+        cap_ = cv2.VideoCapture( args.file )
     assert cap_
 
     frame_ = fetch_a_good_frame( )
