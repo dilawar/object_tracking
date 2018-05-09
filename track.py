@@ -128,10 +128,7 @@ def is_a_good_frame( frame ):
     return True
 
 def readOrNext( cap ):
-    try:
-        return cap.read( )
-    except Exception as e:
-        return True, cap.next( ).asarray( )
+    return True, cap.next( ).asarray( )
 
 def fetch_a_good_frame( drop = 0 ):
     global cap_
@@ -140,14 +137,7 @@ def fetch_a_good_frame( drop = 0 ):
         ret, frame = readOrNext( cap_ )
         nframe_ += 1
     ret, frame = readOrNext( cap_ )
-    if ret:
-        if is_a_good_frame( frame ):
-            return toGrey( frame )
-        else:
-            return fetch_a_good_frame( )
-    else:
-        print( "Can't fetch anymore. All done" )
-        return None
+    return  frame
 
 def distance( p0, p1 ):
     x0, y0 = p0
@@ -192,7 +182,6 @@ def fix_current_location( frame ):
         print( '- Time %.2f, Current loc %s', ( nframe_/fps_, str(curr_loc_)))
         time = nframe_ / float( fps_ )
         # Append to trajectory file.
-        # done, totalF, fps = get_cap_props( )
         with open( trajectory_file_, 'a' ) as trajF:
             c0, r0 = curr_loc_
             trajF.write( '%g %d %d\n' % (time, c0, r0) )
@@ -259,7 +248,7 @@ def insert_int_corners( points ):
         return 
     for p in points:
         (x,y) = p.ravel()
-        static_features_img_[ y, x ] += 1
+        static_features_img_[int(y),int(x)] += 1
 
 def smooth( vec, N = 10 ):
     window = np.ones( N ) / N
@@ -302,27 +291,6 @@ def track( cur ):
     return 
 
 
-def get_cap_props( ):
-    global cap_
-    nFrame = 0
-    try:
-        nFrames = cap_.get( cv2.cv.CV_CAP_PROP_FRAME_COUNT )
-    except Exception as e:
-        nFrames = cap_.get( cv2.CAP_PROP_FRAME_COUNT )
-    fps = 0.0
-    try:
-        fps = float( cap_.get( cv2.cv.CV_CAP_PROP_FPS ) )
-    except Exception as e:
-        fps = float( cap_.get( cv2.CAP_PROP_FPS ) )
-
-    totalFramesDone = 0
-    try:
-        totalFramesDone = cap_.get( cv2.cv.CV_CAP_PROP_POS_FRAMES ) 
-    except Exception as e:
-        totalFramesDone = cap_.get( cv2.CAP_PROP_POS_FRAMES ) 
-
-    return totalFramesDone, nFrames, fps 
-
 def process( args ):
     global cap_
     global box_
@@ -330,17 +298,9 @@ def process( args ):
     global nframe_
     global static_features_img_ 
 
-    nframe_, totalFrames, fps = get_cap_props( )
-    print( '[INFO] FPS = %f' % fps )
-    if fps > 1: fps_ = fps
-
     static_features_img_ = np.zeros( frame_.shape )
     while True:
         nframe_ += 1
-        if nframe_ + 1 >= totalFrames:
-            print( '== All done. Total frames %d' % nframe_ )
-            break
-
         frame_ = fetch_a_good_frame( ) 
         if frame_ is None:
             break
@@ -354,8 +314,6 @@ def process( args ):
         # good corners on the mouse.
         if nframe_ % 5 == 0:
             static_features_img_ /=  5.0
-
-        print( '[INFO] Done %d frames out of %d' % ( nframe_, totalFrames ))
     print( '== All done' )
 
 def main(args):
@@ -368,13 +326,8 @@ def main(args):
         f.write( 'time column row\n' )
 
     initialize_global_window( )
-    if '.tif' in args.file[-4:]:
-        print( 'Reading a tiff file' )
-        cap_ = (x for x in tifffile.TiffFile( args.file ).pages )
-    else:
-        cap_ = cv2.VideoCapture( args.file )
-    assert cap_
-
+    print( 'Reading a tiff file' )
+    cap_ = (x for x in tifffile.TiffFile( args.file ).pages )
     frame_ = fetch_a_good_frame( )
 
     # Let user draw rectangle around animal on first frame.
